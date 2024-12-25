@@ -4,6 +4,23 @@ from document_processor import DocumentProcessor
 from chat import ChatBot
 import tempfile
 from typing import List, Tuple
+from dotenv import load_dotenv
+import os
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv(override=True)
+
+# Log environment variables at startup
+logger.info("Environment variables after loading .env:")
+logger.info(f"AZURE_OPENAI_ENDPOINT: {os.getenv('AZURE_OPENAI_ENDPOINT')}")
+logger.info(f"OPENAI_API_VERSION: {os.getenv('OPENAI_API_VERSION')}")
+logger.info(f"AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT: {os.getenv('AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT')}")
+logger.info(f"AZURE_OPENAI_CHAT_DEPLOYMENT_NAME: {os.getenv('AZURE_OPENAI_CHAT_DEPLOYMENT_NAME')}")
 
 # Initialize session state
 if "chat_history" not in st.session_state:

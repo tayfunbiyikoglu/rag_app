@@ -4,13 +4,17 @@ import psycopg2
 from psycopg2.extensions import register_adapter
 import numpy as np
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 
-def addapt_numpy_array(numpy_array):
-    return psycopg2.Binary(numpy_array.tobytes())
+def adapt_array(arr):
+    """
+    Convert numpy array to a format suitable for PostgreSQL vector type.
+    """
+    return f"[{','.join(map(str, arr.astype(float)))}]"
 
-register_adapter(np.ndarray, addapt_numpy_array)
+register_adapter(np.ndarray, adapt_array)
 
 class Database:
     def __init__(self):
@@ -25,6 +29,13 @@ class Database:
 
     def _create_tables(self):
         with self.conn.cursor() as cur:
+            # Create vector extension if it doesn't exist
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            
+            # Drop existing tables if they exist
+            cur.execute("DROP TABLE IF EXISTS chunks")
+            cur.execute("DROP TABLE IF EXISTS documents")
+            
             # Create documents table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS documents (
@@ -41,7 +52,7 @@ class Database:
                     id SERIAL PRIMARY KEY,
                     document_id INTEGER REFERENCES documents(id),
                     content TEXT,
-                    embedding vector(1536),
+                    embedding vector(3072),
                     chunk_index INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -61,25 +72,27 @@ class Database:
     def insert_chunks(self, document_id: int, chunks: List[Tuple[str, np.ndarray, int]]):
         with self.conn.cursor() as cur:
             for content, embedding, chunk_index in chunks:
+                embedding_str = adapt_array(embedding)
                 cur.execute(
                     """
                     INSERT INTO chunks (document_id, content, embedding, chunk_index)
-                    VALUES (%s, %s, %s, %s)
+                    VALUES (%s, %s, %s::vector, %s)
                     """,
-                    (document_id, content, embedding, chunk_index)
+                    (document_id, content, embedding_str, chunk_index)
                 )
             self.conn.commit()
 
     def search_similar_chunks(self, query_embedding: np.ndarray, limit: int = 5) -> List[Tuple[str, float]]:
         with self.conn.cursor() as cur:
+            embedding_str = adapt_array(query_embedding)
             cur.execute(
                 """
-                SELECT content, 1 - (embedding <=> %s) as similarity
+                SELECT content, 1 - (embedding <=> %s::vector) as similarity
                 FROM chunks
                 ORDER BY similarity DESC
                 LIMIT %s
                 """,
-                (query_embedding, limit)
+                (embedding_str, limit)
             )
             return cur.fetchall()
 

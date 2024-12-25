@@ -1,13 +1,13 @@
 import os
 from typing import List
-from langchain.chat_models import AzureChatOpenAI
+from langchain_openai import AzureChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 
 class ChatBot:
     def __init__(self):
         self.llm = AzureChatOpenAI(
             azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-            deployment_name=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
+            deployment_name=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME"),
             api_key=os.getenv("AZURE_OPENAI_API_KEY"),
             temperature=0.7,
         )
