@@ -1,33 +1,29 @@
-import os
-from typing import List, Tuple
+"""Database operations for document storage and retrieval."""
 import psycopg2
 from psycopg2.extensions import register_adapter
 import numpy as np
-from dotenv import load_dotenv
-import json
+from typing import List, Tuple, Optional
 import logging
+import os
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-
 def adapt_array(arr):
-    """
-    Convert numpy array to a format suitable for PostgreSQL vector type.
-    """
+    """Convert numpy array to a format suitable for PostgreSQL vector type."""
     return f"[{','.join(map(str, arr.astype(float)))}]"
 
 register_adapter(np.ndarray, adapt_array)
 
 class Database:
     def __init__(self):
+        """Initialize database connection."""
         self.conn = None
         logger.info("Initializing database connection...")
         self.connect()
         self._create_tables()
 
     def connect(self):
+        """Connect to the database."""
         logger.info("Connecting to database...")
         if self.conn is None or self.conn.closed:
             try:
@@ -59,6 +55,7 @@ class Database:
             self.connect()
 
     def _create_tables(self):
+        """Create necessary tables if they don't exist."""
         self.ensure_connection()
         with self.conn.cursor() as cur:
             # Create vector extension if it doesn't exist
@@ -81,7 +78,7 @@ class Database:
                     id SERIAL PRIMARY KEY,
                     document_id INTEGER REFERENCES documents(id),
                     content TEXT,
-                    embedding vector(3072),
+                    embedding vector(1536),
                     chunk_index INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -89,17 +86,19 @@ class Database:
             self.conn.commit()
 
     def insert_document(self, title: str, source: str, user_id: str) -> int:
+        """Insert a new document and return its ID."""
         self.ensure_connection()
         with self.conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO documents (title, source, user_id) VALUES (%s, %s, %s) RETURNING id",
                 (title, source, user_id)
             )
-            document_id = cur.fetchone()[0]
+            doc_id = cur.fetchone()[0]
             self.conn.commit()
-            return document_id
+            return doc_id
 
-    def insert_chunks(self, document_id: int, chunks: List[Tuple[str, np.ndarray, int]]):
+    def insert_chunks(self, doc_id: int, chunks: List[Tuple[str, np.ndarray, int]]):
+        """Insert document chunks with their embeddings."""
         self.ensure_connection()
         with self.conn.cursor() as cur:
             for content, embedding, chunk_index in chunks:
@@ -109,19 +108,12 @@ class Database:
                     INSERT INTO chunks (document_id, content, embedding, chunk_index)
                     VALUES (%s, %s, %s::vector, %s)
                     """,
-                    (document_id, content, embedding_str, chunk_index)
+                    (doc_id, content, embedding_str, chunk_index)
                 )
             self.conn.commit()
 
     def get_user_documents(self, user_id: str) -> List[Tuple[int, str, str]]:
-        """Get all documents for a user.
-        
-        Args:
-            user_id: The ID of the user
-            
-        Returns:
-            List of tuples containing (id, title, source)
-        """
+        """Get all documents for a specific user."""
         self.ensure_connection()
         with self.conn.cursor() as cur:
             cur.execute(
@@ -130,8 +122,14 @@ class Database:
             )
             return cur.fetchall()
 
-    def search_similar_chunks(self, query_embedding: np.ndarray, limit: int = 5, user_id: str = None, document_id: int = None) -> List[Tuple[str, str, float]]:
-        """Search for similar chunks in the database."""
+    def search_similar_chunks(
+        self, 
+        query_embedding: np.ndarray, 
+        limit: int = 5, 
+        user_id: Optional[str] = None,
+        document_id: Optional[int] = None
+    ) -> List[Tuple[str, str, float]]:
+        """Search for similar chunks using cosine similarity."""
         self.ensure_connection()
         with self.conn.cursor() as cur:
             # Convert embedding to string format
@@ -166,6 +164,7 @@ class Database:
             return [(content, title, float(distance)) for content, title, distance in results]
 
     def close(self):
+        """Close the database connection."""
         if self.conn is not None:
             self.conn.close()
             self.conn = None

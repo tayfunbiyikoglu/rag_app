@@ -40,3 +40,6 @@ ENV/
 # Project specific
 *.db
 *.sqlite3
+
+# Logs
+*.log
