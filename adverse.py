@@ -128,6 +128,13 @@ def main():
     # Setup
     setup_logging()
     setup_streamlit()
+    
+    # Initialize session state for modal
+    if 'show_modal' not in st.session_state:
+        st.session_state.show_modal = False
+
+    def toggle_modal():
+        st.session_state.show_modal = not st.session_state.show_modal
 
     # Inject custom CSS
     st.markdown("""
@@ -141,61 +148,107 @@ def main():
         div.block-container > div:first-child {
             margin-top: 1rem;
         }
+        .phase-box {
+            background-color: #f0f2f6;
+            border-radius: 10px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        .phase-title {
+            color: #4B4BC8;
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+        }
+        /* Info button styling */
+        div[data-testid="stButton"] button:first-of-type {
+            background-color: transparent;
+            border: none;
+            padding: 0;
+            font-size: 1.5rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+        /* Main action buttons styling */
+        div[data-testid="stButton"] button {
+            background-color: #4B4BC8;
+            color: white;
+            padding: 0.75rem 2rem;
+            font-size: 1rem;
+            width: 100%;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+        div[data-testid="stButton"] button:hover {
+            background-color: #3939A2;
+            color: #E50050;
+        }
+        /* Modal close button specific styling */
+        div[data-testid="stButton"] button[kind="secondary"] {
+            background-color: #6B6BE8;
+            padding: 0.5rem 2rem;
+        }
         </style>
     """, unsafe_allow_html=True)
-
+    
     # Center the content
-    col1, col2 = st.columns([0.2, 2])
-
+    col1, col2, col3 = st.columns([0.2, 1.7, 0.1])
+    
     with col1:
         st.image("static/logo.png", width=60)
-
+        
     with col2:
-        st.markdown("<h1 style='color: #4B4BC8; margin-left: -1rem; margin-top: -1rem'>Financial Institution Adverse News Search 🔍</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='color: #4B4BC8; margin-left: -1rem; margin-top: -1rem'>Adverse News Search 🔍</h1>", unsafe_allow_html=True)
+    
+    with col3:
+        st.button("ℹ️", on_click=toggle_modal, key="info_button")
+
+    # Handle modal state
+    if st.session_state.show_modal:
+        with st.expander("Understanding Our Analysis System", expanded=True):
+            st.markdown("""
+                <div class='phase-box'>
+                    <div class='phase-title'>📊 Phase 1: Initial Screening</div>
+                    • Performs Google search for adverse news<br>
+                    • Quick analysis of each result with composite scoring:<br>
+                    &nbsp;&nbsp;- Risk Score (60%): Analyzes content for risk terms<br>
+                    &nbsp;&nbsp;- Domain Score (25%): Rates source credibility<br>
+                    &nbsp;&nbsp;- Recency Score (15%): Considers publication date
+                </div>
+                
+                <div class='phase-box'>
+                    <div class='phase-title'>🔍 Phase 2: Detailed Analysis</div>
+                    • In-depth content analysis of top results<br>
+                    • Evaluates relevancy with threshold of 50<br>
+                    • Final score combines:<br>
+                    &nbsp;&nbsp;- Content relevancy (80%)<br>
+                    &nbsp;&nbsp;- Source reliability (20%)
+                </div>
+                
+                <div style='margin-top: 1rem;'>
+                    <strong>💡 Key Benefits:</strong><br>
+                    ✓ Smart scoring prioritizes important findings<br>
+                    ✓ Considers both content and source quality<br>
+                    ✓ Balances recency with relevance
+                </div>
+            """, unsafe_allow_html=True)
+            
+            st.write("")  # Add some space
+            left_col, center_col, right_col = st.columns([1, 1, 1])
+            with center_col:
+                if st.button("✕ Close", key="close_modal", use_container_width=True):
+                    st.session_state.show_modal = False
+                    st.rerun()
 
     st.write("Enter a financial institution name to search for adverse news and regulatory actions.")
 
-    # Add information expander
-    with st.expander("ℹ️ Understanding Our Two-Phase Analysis System"):
-        st.write("""
-        Our adverse news analysis employs a sophisticated two-phase approach to ensure accurate and relevant results:
-
-        **Phase 1: Initial Screening**
-        - Quick analysis of content relevance and source credibility
-        - Filters out obviously irrelevant or low-quality content
-        - Helps prioritize the most significant findings
-
-        **Phase 2: Detailed Analysis**
-
-        For content that passes initial screening, we perform a detailed two-stage scoring:
-
-        1️⃣ **Relevancy Assessment** (Primary Factor)
-        - Evaluates how relevant the content is to adverse news
-        - Score below 50: Content is not significantly relevant
-        - Score 50+: Content contains meaningful adverse news information
-
-        2️⃣ **Final Risk Score Calculation**
-        For content passing the relevancy threshold:
-        - 80% weight given to relevancy score
-        - 20% weight given to source reliability
-
-        This approach ensures that:
-        - Only genuinely relevant adverse news gets highlighted
-        - High reliability alone doesn't inflate scores of non-relevant content
-        - Focus remains on actual adverse news findings rather than peripheral mentions
-
-        **Understanding the Scores:**
-        - Overall Risk Score: Final assessment combining relevancy and reliability
-        - Relevancy Score: How significant the adverse news content is
-        - Reliability Score: How trustworthy the source is
-        """)
-
-    # User inputs
+    # Input fields
     fi_name = st.text_input("Financial Institution Name")
     num_results = st.slider("Number of top sources to analyze in detail", 1, 20, 10,
                           help="First, we'll quickly analyze all found sources. Then, we'll perform detailed analysis on this many top-scoring sources.")
 
-    if st.button("Search and Analyze"):
+    # Search button
+    if st.button("Search and Analyze", key="search_button", use_container_width=True):
         if not fi_name:
             st.warning("Please enter a financial institution name.")
             return

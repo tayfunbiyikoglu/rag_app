@@ -65,45 +65,40 @@ def _build_scoring_explanation() -> str:
 Our adverse news analysis employs a sophisticated two-phase approach to ensure accurate and relevant results:
 
 ### Phase 1: Initial Screening
-- Quick analysis of content relevance and source credibility
-- Filters out obviously irrelevant or low-quality content
-- Helps prioritize the most significant findings
+• Performs Google search for adverse news
+• Quick analysis of each result with composite scoring:
+  - Risk Score (60%): Analyzes content for risk terms
+  - Domain Score (25%): Rates source credibility
+  - Recency Score (15%): Considers publication date
 
 ### Phase 2: Detailed Analysis
-
-For content that passes initial screening, we perform a detailed two-stage scoring:
-
-#### 1️⃣ Relevancy Assessment (Primary Factor)
-- Evaluates how relevant the content is to adverse news
-- Score below 50: Content is not significantly relevant
-- Score 50+: Content contains meaningful adverse news information
-
-#### 2️⃣ Final Risk Score Calculation
-For content passing the relevancy threshold:
-- 80% weight given to relevancy score
-- 20% weight given to source reliability
-
-This approach ensures that:
-- Only genuinely relevant adverse news gets highlighted
-- High reliability alone doesn't inflate scores of non-relevant content
-- Focus remains on actual adverse news findings rather than peripheral mentions
+• In-depth content analysis of top results
+• Evaluates relevancy with threshold of 50
+• Final score combines:
+  - Content relevancy (80%)
+  - Source reliability (20%)
 
 ### Understanding Individual Scores
 
 📊 **Overall Risk Score** (0-100):
-- Final assessment combining relevancy and reliability
-- Only content with significant relevance (50+) can achieve high overall scores
-- High scores (70+) indicate serious adverse news from reliable sources
+- Combines Phase 1 and Phase 2 analysis
+- Higher scores indicate more significant adverse news
+- Weighted balance of content relevancy and source reliability
 
 🎯 **Relevancy Score** (0-100):
 - Measures how significant the adverse news content is
-- Primary factor in determining overall risk
-- Considers direct involvement, severity, and impact
+- Primary factor (80%) in determining overall risk
+- Threshold of 50 required for significant findings
 
 ⭐ **Reliability Score** (0-100):
-- Measures source credibility and content quality
-- Secondary factor, only impacts relevant content
-- Considers source reputation, evidence quality, and reporting standards
+- Based on domain credibility and source quality
+- Secondary factor (20%) in final scoring
+- Helps prioritize reliable sources while not excluding others
+
+### Key Benefits
+✓ Smart scoring prioritizes important findings
+✓ Considers both content and source quality
+✓ Balances recency with relevance
 """
 
 def _build_key_findings_section(analyses: List[Dict]) -> str:
