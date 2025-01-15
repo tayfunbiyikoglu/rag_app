@@ -20,21 +20,34 @@ SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 if not SERPAPI_KEY:
     raise ValueError("SERPAPI_KEY not found in environment variables. Please set it in your .env file.")
 
+# Azure OpenAI Configuration
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-if not AZURE_OPENAI_API_KEY:
-    raise ValueError("AZURE_OPENAI_API_KEY not found in environment variables. Please set it in your .env file.")
-
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-if not AZURE_OPENAI_ENDPOINT:
-    raise ValueError("AZURE_OPENAI_ENDPOINT not found in environment variables. Please set it in your .env file.")
-
+AZURE_OPENAI_DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+OPENAI_API_VERSION = os.getenv("OPENAI_API_VERSION", "2023-05-15")
 AZURE_OPENAI_CHAT_DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME")
-if not AZURE_OPENAI_CHAT_DEPLOYMENT_NAME:
-    raise ValueError("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME not found in environment variables. Please set it in your .env file.")
+AZURE_OPENAI_MODEL_NAME = os.getenv("AZURE_OPENAI_MODEL_NAME")
+AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT")
+
+if not all([AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_CHAT_DEPLOYMENT_NAME]):
+    raise ValueError("Required Azure OpenAI configuration missing. Please check your .env file.")
 
 # Search configuration
 MAX_INITIAL_RESULTS = int(os.getenv("MAX_INITIAL_RESULTS", "30"))
 MIN_COMPOSITE_SCORE = int(os.getenv("MIN_COMPOSITE_SCORE", "30"))
+MIN_RELIABILITY_SCORE = 75  # 70-80% reliability threshold
+MIN_RELEVANCY_SCORE = 70   # 70% relevancy threshold
+DEFAULT_LOOKBACK_MONTHS = 24  # 2 years for new entries/reviews
+ALERT_LOOKBACK_MONTHS = 12   # 1 year for alerts
+MIN_SOURCES_REQUIRED = 2     # Minimum number of sources for verification
+
+# Exclusion patterns
+EXCLUDE_PATTERNS = [
+    "former employee",
+    "ex-employee",
+    "claimant",
+    "plaintiff",
+]
 
 # Domain priority scores
 DOMAIN_PRIORITIES = {

@@ -14,5 +14,6 @@ pgvector>=0.2.3
 langchain-community>=0.0.28
 langchain-openai>=0.2.14
 tiktoken>=0.5.1
-python-pypdf>=4.0.0
 python-markdown-math>=0.8
+azure-cognitiveservices-speech>=1.31.0
+reportlab>=4.0.0

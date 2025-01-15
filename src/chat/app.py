@@ -31,26 +31,47 @@ def init_session_state():
         st.session_state.processed_files = set()
     if "user_id" not in st.session_state:
         st.session_state.user_id = "default_user"
+    if "last_uploaded_doc_id" not in st.session_state:
+        st.session_state.last_uploaded_doc_id = None
+
+def on_user_change():
+    """Handle user ID change."""
+    st.session_state.user_id = st.session_state.user_id_input
+    st.session_state.processed_files = set()
+    st.session_state.chat_history = []
 
 def setup_sidebar():
     """Setup sidebar with user controls."""
     with st.sidebar:
-        user_id = st.text_input("User ID:", value=st.session_state.user_id)
-        if user_id != st.session_state.user_id:
-            st.session_state.user_id = user_id
-            st.session_state.processed_files = set()
+        st.text_input(
+            "User ID:",
+            value=st.session_state.user_id,
+            key="user_id_input",
+            on_change=on_user_change
+        )
 
         documents = st.session_state.db.get_user_documents(st.session_state.user_id)
         selected_doc = None
         
         if documents:
             doc_options = [("all", "All Documents")] + [(str(id), title) for id, title, _ in documents]
+            # Use the last uploaded document as the default if available
+            default_index = 0
+            if st.session_state.last_uploaded_doc_id:
+                for i, (doc_id, _) in enumerate(doc_options):
+                    if doc_id == str(st.session_state.last_uploaded_doc_id):
+                        default_index = i
+                        break
+            
             selected_doc = st.selectbox(
                 "Select Document:",
                 options=[id for id, _ in doc_options],
                 format_func=lambda x: dict(doc_options)[x],
-                key="selected_document"
+                key="selected_document",
+                index=default_index
             )
+            # Reset last_uploaded_doc_id after it's been used
+            st.session_state.last_uploaded_doc_id = None
         else:
             st.info("No documents found. Please upload a document first.")
 
@@ -80,7 +101,10 @@ def handle_file_upload():
                     )
                     st.session_state.db.insert_chunks(doc_id, chunk_embeddings)
                     st.session_state.processed_files.add(file_key)
+                    # Store the new document ID to be used as default selection
+                    st.session_state.last_uploaded_doc_id = doc_id
                     st.success("Document indexed successfully!")
+                    st.rerun()
 
 def main():
     """Main application function."""
