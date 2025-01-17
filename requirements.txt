@@ -13,3 +13,4 @@ azure-storage-blob>=12.18.3
 tiktoken>=0.5.1
 python-markdown-math>=0.8
 azure-cognitiveservices-speech>=1.31.0
+atlassian-python-api>=3.41.4
