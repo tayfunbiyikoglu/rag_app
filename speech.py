@@ -20,12 +20,26 @@ MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB
 ALLOWED_TYPES = ["audio/wav", "audio/mpeg"]
 
 def initialize_speech_client():
+    """Initialize Azure Speech Services client with better error handling"""
     speech_key = os.getenv("AZURE_SPEECH_KEY")
     speech_region = os.getenv("AZURE_SPEECH_REGION")
-    if not speech_key or not speech_region:
-        raise ValueError("Azure Speech credentials not found in environment variables")
-    speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=speech_region)
-    return speech_config
+    
+    if not speech_key:
+        st.error("Azure Speech Key not found in environment variables")
+        raise ValueError("AZURE_SPEECH_KEY is required")
+    
+    if not speech_region:
+        st.error("Azure Speech Region not found in environment variables")
+        raise ValueError("AZURE_SPEECH_REGION is required")
+    
+    try:
+        speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=speech_region)
+        # Enable detailed logging
+        speech_config.set_property(speechsdk.PropertyId.Speech_LogFilename, "speech_log.txt")
+        return speech_config
+    except Exception as e:
+        st.error(f"Failed to initialize Speech Services: {str(e)}")
+        raise
 
 def initialize_openai_client():
     client = AzureOpenAI(
