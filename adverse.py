@@ -4,19 +4,32 @@ import asyncio
 import streamlit as st
 from datetime import datetime
 from src.utils.pdf_utils import convert_to_pdf
-from src.services.search_service import create_search_query, search_internet
+from src.services.search_service import (
+    create_search_query,
+    search_internet,
+    analyze_results_summary
+)
 from src.utils.logging_config import setup_logging
 from src.config.settings import setup_streamlit
+import os
 
 async def main():
     """Main application function."""
     # Setup
     setup_logging()
     setup_streamlit()
-    
+
     logging.warning("Starting main application...")
     logging.warning(f"Called from: {__file__}")
-    
+
+    # Initialize session state
+    if 'search_results' not in st.session_state:
+        st.session_state.search_results = None
+    if 'fi_name_saved' not in st.session_state:
+        st.session_state.fi_name_saved = None
+    if 'pdf_downloaded' not in st.session_state:
+        st.session_state.pdf_downloaded = False
+
     # Inject custom CSS
     st.markdown("""
         <style>
@@ -46,153 +59,148 @@ async def main():
         }
         </style>
     """, unsafe_allow_html=True)
-    
+
     # Center the content
     col1, col2 = st.columns([0.2, 1.8])
-    
-    with col1:
-        st.image("static/logo.png", width=60)
-        
+
     with col2:
-        st.markdown("<h1 style='color: #4B4BC8; margin-left: -1rem; margin-top: -1rem'>Adverse News Search 🔍</h1>", unsafe_allow_html=True)
+        st.title("Adverse News Search")
 
-    st.write("Enter a financial institution name to search for adverse news and regulatory actions.")
-    
-    # Input fields
-    fi_name = st.text_input("Enter Financial Institution Name", key="fi_name_input")
-    
-    # Sliders in two columns
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        months_interval = st.slider("Search Time Period (months)", 
-                                  min_value=1, 
-                                  max_value=24, 
-                                  value=6,
-                                  key="months_slider")
-    
-    with col2:
-        num_results = st.slider("Number of Results", 
-                              min_value=5, 
-                              max_value=20, 
-                              value=10,
-                              help="Number of search results to analyze",
-                              key="results_slider")
+        # Input fields
+        fi_name = st.text_input("Enter Financial Institution Name:")
 
-    # Search button
-    if st.button("Search and Analyze", key="search_button", use_container_width=True):
-        if not fi_name:
-            st.warning("Please enter a financial institution name.")
-            return
+        # Search options in columns
+        col_options1, col_options2, col_options3 = st.columns(3)
+        with col_options1:
+            months = st.number_input("Search Period (Last n Months):", min_value=1, max_value=24, value=6)
+        with col_options2:
+            min_score = st.slider("Minimum Risk Score:", min_value=0, max_value=100, value=50, step=5)
+        with col_options3:
+            num_results = st.number_input("Number of Results to analyze:", min_value=5, max_value=20, value=10, help="Maximum number of search results to analyze")
 
-        with st.spinner("Searching and analyzing..."):
-            try:
-                # Create search query
-                logging.warning(f"Creating search query for '{fi_name}' with {months_interval} months interval")
-                query = create_search_query(fi_name, months_interval)
-                
-                if not query:
-                    logging.warning("Query creation failed")
-                    return
-                    
-                # Perform search with user-specified number of results
-                logging.warning(f"Starting internet search with query: '{query}', num_results: {num_results}")
-                search_results = await search_internet(query, num_results)
-                
-                if not search_results or not search_results['results']:
-                    st.error("No results found in the specified time period.")
-                    logging.warning("No results found")
-                    return
+        # Search button
+        if st.button("Search for Adverse News"):
+            if fi_name:
+                with st.spinner('Searching for adverse news...'):
+                    # Create search query
+                    query = create_search_query(fi_name, months)
+                    st.info(f"🔍 Search query: `{query}`")
+                    logging.warning(f"Generated search query: {query}")
 
-                # Display overall summary
-                summary = search_results['summary']
-                st.markdown("---")
-                st.markdown(f"### Overall Assessment")
-                
-                # Display decision box
-                decision_color = "#28a745" if not summary['has_adverse_news'] else "#dc3545"
-                st.markdown(
-                    f"""
-                    <div style="padding: 1rem; border-radius: 0.5rem; background-color: {decision_color}; color: white; margin-bottom: 1rem; text-align: center;">
-                        <h4 style="margin: 0; color: white;">Adverse News: {'YES' if summary['has_adverse_news'] else 'NO'}</h4>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                
-                # Display metrics
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Total Articles", summary['total_articles'])
-                with col2:
-                    st.metric("Highest Risk Score", f"{summary['highest_risk_score']}/100")
-                
-                # Display summary
-                st.markdown("#### Summary")
-                st.markdown(f"_{summary['summary']}_")
-                st.markdown("---")
+                    # Perform search with minimum score threshold
+                    raw_results = await search_internet(query, min_score=min_score, months=months, num_results=num_results)
 
-                # Display individual results
-                st.markdown("### Detailed Analysis")
-                for i, result in enumerate(search_results['results'], 1):
-                    with st.expander(f"🔍 {result['title']}", expanded=True):
-                        analysis = result['analysis']
-                        date_str = result.get('date', 'Date not available')
-                        st.markdown(f"""
-                        - **Risk Score**: {analysis['score']}/100
-                        - **Source**: [{result['source']}]({result['link']})
-                        - **Date**: {date_str}
-                        - **Summary**: {analysis['summary']}
-                        - **Reason**: {analysis['reason']}
-                        """)
-                
-                # Add PDF export button
-                if search_results['results']:
-                    st.divider()
-                    col1, col2, col3 = st.columns([1, 2, 1])
-                    with col2:
-                        report_content = f"""# Adverse News Analysis Report
-                                
-## Executive Summary
-Analysis performed on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Total results analyzed: {len(search_results['results'])}
+                    # Filter results to only include those that mention the institution name
+                    results = []
+                    for result in raw_results:
+                        title_match = fi_name.lower() in result['title'].lower()
+                        snippet_match = fi_name.lower() in result['snippet'].lower()
+                        if title_match or snippet_match:
+                            results.append(result)
+                        else:
+                            logging.info(f"Filtered out result: {result['title']} (institution name not found)")
 
-Overall Assessment:
-{summary['summary']}
+                    # Store results in session state
+                    st.session_state.search_results = results
+                    st.session_state.fi_name_saved = fi_name
 
-Key Metrics:
-- Total Articles: {summary['total_articles']}
-- Highest Risk Score: {summary['highest_risk_score']}/100
+                    if results:
+                        # Log filtering results
+                        st.info(f"Found {len(raw_results)} results, filtered to {len(results)} relevant matches.")
+                        logging.warning(f"Filtered {len(raw_results) - len(results)} irrelevant results")
+                        logging.warning(f"Remaining relevant results: {len(results)}")
 
-## Detailed Findings
+                        # Create summary
+                        summary = await analyze_results_summary(results)
 
-"""
-                        for result in search_results['results']:
-                            analysis = result['analysis']
+                        # Display results
+                        st.markdown("### Search Results")
+
+                        # Display summary first
+                        if summary.get("has_adverse_news"):
+                            st.error(f"""
+                            #### Risk Summary
+                            - Highest Risk Score: {summary['highest_risk_score']}
+                            - Total Articles: {summary['total_articles']}
+
+                            {summary['summary']}
+                            """)
+
+                        # Display individual results
+                        for result in results:
                             date_str = result.get('date', 'Date not available')
-                            report_content += f"""### {result['title']}
-- **Date**: {date_str}
-- **Source**: {result['source']} ({result['link']})
-- **Risk Score**: {analysis['score']}/100
-- **Summary**: {analysis['summary']}
-- **Reason**: {analysis['reason']}
+                            with st.expander(f"{result['title']} - Risk Score: {result['analysis']['score']} ({date_str})"):
+                                st.markdown(f"""
+                                **Source:** {result['source']}
+                                **Date:** {date_str}
+                                **Link:** [{result['link']}]({result['link']})
 
-"""
+                                **Snippet:**
+                                {result['snippet']}
+
+                                **Analysis:**
+                                {result['analysis'].get('reason', result['analysis'].get('summary', 'No analysis available'))}
+                                """)
+                    else:
+                        st.info("No significant adverse news found within the specified criteria.")
+            else:
+                st.warning("Please enter a financial institution name.")
+
+        # Show PDF section if we have results and haven't downloaded yet
+        if st.session_state.search_results and not st.session_state.pdf_downloaded:
+            st.markdown("---")
+            st.markdown("### Download Report")
+
+            # Generate PDF report option
+            if st.button("📄 Generate PDF Report", key="generate_pdf"):
+                logging.warning("PDF generation button clicked")
+                with st.spinner("🔄 Generating PDF report..."):
+                    try:
+                        # Create filename with timestamp
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = f"adverse_news_{st.session_state.fi_name_saved}_{timestamp}.pdf"
+                        output_path = os.path.join(os.getcwd(), filename)
+                        logging.warning(f"Will generate PDF at: {output_path}")
+
                         # Generate PDF
-                        pdf_buffer = convert_to_pdf(report_content)
-                        
-                        st.download_button(
-                            "📄 Download PDF Report",
-                            data=pdf_buffer,
-                            file_name=f"adverse_news_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-                            mime="application/pdf",
-                            use_container_width=True
-                        )
-                        logging.warning("PDF report generated and downloaded")
+                        logging.warning("Starting PDF generation...")
+                        pdf_path = convert_to_pdf(st.session_state.search_results, st.session_state.fi_name_saved, output_path)
+                        logging.warning(f"PDF generated at: {pdf_path}")
 
-            except Exception as e:
-                st.error(f"An error occurred during the search: {str(e)}")
-                logging.error(f"Search error: {str(e)}")
+                        # Read PDF file
+                        with open(pdf_path, "rb") as f:
+                            pdf_bytes = f.read()
+                        logging.warning(f"Read {len(pdf_bytes)} bytes from PDF")
+
+                        # Clean up the file
+                        os.remove(pdf_path)
+                        logging.warning("Temporary PDF file cleaned up")
+
+                        # Store PDF in session state
+                        st.session_state.pdf_bytes = pdf_bytes
+                        st.session_state.pdf_filename = filename
+
+                        # Show success message
+                        st.success("✅ PDF generated successfully!")
+
+                    except Exception as e:
+                        st.error(f"❌ Error generating PDF: {str(e)}")
+                        logging.error(f"PDF generation error: {str(e)}", exc_info=True)
+
+            # Show download button if PDF was generated
+            if hasattr(st.session_state, 'pdf_bytes'):
+                if st.download_button(
+                    label="⬇️ Download PDF Report",
+                    data=st.session_state.pdf_bytes,
+                    file_name=st.session_state.pdf_filename,
+                    mime="application/pdf",
+                    key="download_pdf"
+                ):
+                    # Set downloaded flag and clean up
+                    st.session_state.pdf_downloaded = True
+                    del st.session_state.pdf_bytes
+                    del st.session_state.pdf_filename
+                    st.rerun()  # Rerun to hide the section
 
 if __name__ == "__main__":
     asyncio.run(main())

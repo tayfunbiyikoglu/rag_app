@@ -31,14 +31,14 @@ def create_search_query(fi_name: str, months: int = None) -> str:
         "breach", "compliance"
     ]
     
-    # Create the query with adverse terms
+    # Create the query with adverse terms and exact match for institution name
     adverse_query = " OR ".join(f'"{term}"' for term in adverse_terms)
     
     # Add date filter if months is specified
     date_filter = f" when:{months}m" if months and months > 0 else ""
     
-    # Combine everything
-    query = f'"{fi_name}" ({adverse_query}){date_filter}'
+    # Combine everything with exact match for institution name
+    query = f'"{fi_name}" AND ({adverse_query}){date_filter}'
     logging.warning(f"Generated search query: {query}")
     
     return query
@@ -220,10 +220,17 @@ Respond in JSON format:
             "total_articles": total_articles
         }
 
-async def search_internet(query: str, num_results: int = 10) -> List[Dict]:
-    """Search the internet and return a list of URLs with analysis."""
+async def search_internet(query: str, num_results: int = 10, min_score: float = 50.0, months: int = 6) -> List[Dict]:
+    """Search the internet and return a list of URLs with analysis.
+    
+    Args:
+        query: Search query string
+        num_results: Number of results to fetch
+        min_score: Minimum score threshold for including results (0-100)
+        months: Number of months to look back in search
+    """
     logging.warning(f"search_internet called with query: '{query}'")
-    logging.warning(f"Requesting {num_results} results from search")
+    logging.warning(f"Requesting {num_results} results from search, looking back {months} months")
     
     if not query:
         logging.warning("Empty query provided to search_internet")
@@ -235,9 +242,10 @@ async def search_internet(query: str, num_results: int = 10) -> List[Dict]:
             "api_key": SERPAPI_KEY,
             "engine": "google",
             "q": query,
-            "num": num_results,  # Use exact number of results requested
+            "num": num_results,  # Request the specified number of results
             "gl": "us",    # Search in US
-            "hl": "en"     # English results
+            "hl": "en",    # English results
+            "tbs": f"qdr:m{months}"  # Dynamic time range based on user input
         }
         
         search = GoogleSearch(params)
@@ -259,8 +267,23 @@ async def search_internet(query: str, num_results: int = 10) -> List[Dict]:
         analyzed_count = 0
         skipped_count = 0
         
+        # Calculate cutoff date based on user-specified months
+        cutoff_date = datetime.now() - timedelta(days=30 * months)
+        
         for result in search_results:
             try:
+                # Extract and validate the date if available
+                result_date_str = result.get('date')
+                if result_date_str:
+                    try:
+                        result_date = datetime.strptime(result_date_str, '%Y-%m-%d')
+                        if result_date < cutoff_date:
+                            logging.info(f"Skipped: Result too old ({result_date_str})")
+                            skipped_count += 1
+                            continue
+                    except ValueError:
+                        logging.warning(f"Could not parse date: {result_date_str}")
+                
                 # Extract source domain from the link
                 domain = urlparse(result['link']).netloc
                 
@@ -284,9 +307,14 @@ async def search_internet(query: str, num_results: int = 10) -> List[Dict]:
                     analysis = await analyze_content(content_to_analyze)
                     
                     if analysis and analysis.get('is_adverse', False):
-                        result['analysis'] = analysis
-                        analyzed_results.append(result)
-                        logging.warning(f"Found adverse news (score: {analysis['score']}) from {domain}")
+                        # Check if the score meets the minimum threshold
+                        if analysis['score'] >= min_score:
+                            result['analysis'] = analysis
+                            analyzed_results.append(result)
+                            logging.warning(f"Found adverse news (score: {analysis['score']}) from {domain}")
+                        else:
+                            skipped_count += 1
+                            logging.info(f"Skipped: Score too low ({analysis['score']} < {min_score})")
                     else:
                         skipped_count += 1
                         logging.info("Not considered adverse news")
@@ -299,22 +327,16 @@ async def search_internet(query: str, num_results: int = 10) -> List[Dict]:
                 logging.error(f"Error processing result {result}: {str(e)}")
                 continue
                 
-        logging.warning(f"""Search Analysis Summary:
-- Total results from search: {len(search_results)}
-- Results analyzed by AI: {analyzed_count}
-- Results skipped: {skipped_count}
-- Final adverse results: {len(analyzed_results)}""")
+        logging.warning(f"Processed {analyzed_count} results, skipped {skipped_count}")
+        logging.warning(f"Found {len(analyzed_results)} relevant adverse news items")
         
-        # Create overall summary
-        summary = await analyze_results_summary(analyzed_results)
+        # Sort results by score in descending order
+        analyzed_results.sort(key=lambda x: x['analysis']['score'], reverse=True)
         
-        return {
-            "results": analyzed_results,
-            "summary": summary
-        }
+        return analyzed_results
         
     except Exception as e:
-        logging.error(f"Search error: {str(e)}")
+        logging.error(f"Error in search_internet: {str(e)}")
         return []
 
 # Export only the necessary functions
