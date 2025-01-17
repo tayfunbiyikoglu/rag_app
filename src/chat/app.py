@@ -40,85 +40,117 @@ def on_user_change():
     st.session_state.processed_files = set()
     st.session_state.chat_history = []
 
-def setup_sidebar():
-    """Setup sidebar with user controls."""
-    with st.sidebar:
-        st.text_input(
-            "User ID:",
-            value=st.session_state.user_id,
-            key="user_id_input",
-            on_change=on_user_change
-        )
+def setup_document_interface():
+    """Setup document interface with user controls."""
+    with st.expander("**Select or Upload Your Documents**", expanded=False):
+        # User ID input
+        col1, col2 = st.columns([2, 3])
+        with col1:
+            st.text_input(
+                "User ID:",
+                value=st.session_state.user_id,
+                key="user_id_input",
+                on_change=on_user_change
+            )
 
+        # Document selection and upload
         documents = st.session_state.db.get_user_documents(st.session_state.user_id)
         selected_doc = None
-        
-        if documents:
-            doc_options = [("all", "All Documents")] + [(str(id), title) for id, title, _ in documents]
-            # Use the last uploaded document as the default if available
-            default_index = 0
-            if st.session_state.last_uploaded_doc_id:
-                for i, (doc_id, _) in enumerate(doc_options):
-                    if doc_id == str(st.session_state.last_uploaded_doc_id):
-                        default_index = i
-                        break
-            
-            selected_doc = st.selectbox(
-                "Select Document:",
-                options=[id for id, _ in doc_options],
-                format_func=lambda x: dict(doc_options)[x],
-                key="selected_document",
-                index=default_index
+
+        with col2:
+            if documents:
+                doc_options = [("all", "All Documents")] + [(str(id), title) for id, title, _ in documents]
+                # Use the last uploaded document as the default if available
+                default_index = 0
+                if st.session_state.last_uploaded_doc_id:
+                    for i, (doc_id, _) in enumerate(doc_options):
+                        if doc_id == str(st.session_state.last_uploaded_doc_id):
+                            default_index = i
+                            break
+
+                selected_doc = st.selectbox(
+                    "Select Document:",
+                    options=[id for id, _ in doc_options],
+                    format_func=lambda x: dict(doc_options)[x],
+                    key="selected_document",
+                    index=default_index
+                )
+                # Reset last_uploaded_doc_id after it's been used
+                st.session_state.last_uploaded_doc_id = None
+            else:
+                st.write("")  # Add vertical spacing
+                st.info("No documents found. Please upload a document first.")
+
+        st.write("")  # Add spacing between rows
+
+        # File upload section with aligned button
+        col3, col4 = st.columns([3, 1])
+        with col3:
+            # Initialize the file uploader key in session state if not present
+            if "file_uploader_key" not in st.session_state:
+                st.session_state.file_uploader_key = 0
+                
+            uploaded_file = st.file_uploader(
+                "Upload PDF",
+                type="pdf",
+                label_visibility="visible",
+                key=f"pdf_uploader_{st.session_state.file_uploader_key}"
             )
-            # Reset last_uploaded_doc_id after it's been used
-            st.session_state.last_uploaded_doc_id = None
-        else:
-            st.info("No documents found. Please upload a document first.")
+        with col4:
+            # Minimal spacing for precise vertical alignment
+            st.markdown("####")  # Using #### for minimal spacing
+            process_pdf = st.button(
+                "Process PDF",
+                disabled=not uploaded_file,
+                type="primary",
+                use_container_width=True
+            )
 
-        st.divider()
-        return selected_doc
+        # Status message container at the bottom
+        status_container = st.empty()
 
-def handle_file_upload():
-    """Handle PDF file upload and processing."""
-    uploaded_file = st.sidebar.file_uploader("Upload PDF", type="pdf")
-    process_pdf = st.sidebar.button("Process PDF", disabled=not uploaded_file)
-
-    if uploaded_file and process_pdf:
-        file_key = f"pdf_{uploaded_file.name}_{st.session_state.user_id}"
-        if file_key not in st.session_state.processed_files:
-            with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-                tmp_file.write(uploaded_file.getvalue())
-                text = st.session_state.doc_processor.process_pdf(tmp_file.name)
-                st.success("PDF processed successfully!")
-
-                with st.spinner("Processing document..."):
+        if uploaded_file and process_pdf:
+            file_key = f"pdf_{uploaded_file.name}_{st.session_state.user_id}"
+            if file_key not in st.session_state.processed_files:
+                with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+                    # Show processing status
+                    status_container.info(f"Processing document: {uploaded_file.name}...")
+                    
+                    tmp_file.write(uploaded_file.getvalue())
+                    text = st.session_state.doc_processor.process_pdf(tmp_file.name)
                     chunks = st.session_state.doc_processor.split_text(text)
                     chunk_embeddings = st.session_state.doc_processor.generate_embeddings(chunks)
+
+                    # Store document and chunks in database
                     doc_id = st.session_state.db.insert_document(
                         title=uploaded_file.name,
-                        source="pdf",
+                        source='pdf',
                         user_id=st.session_state.user_id
                     )
                     st.session_state.db.insert_chunks(doc_id, chunk_embeddings)
                     st.session_state.processed_files.add(file_key)
                     # Store the new document ID to be used as default selection
                     st.session_state.last_uploaded_doc_id = doc_id
-                    st.success("Document indexed successfully!")
+                    
+                    # Update status with success message
+                    status_container.success(f"✨ Document '{uploaded_file.name}' has been successfully processed and indexed! You can now chat with it.")
+                    
+                    # Increment the file uploader key to reset it
+                    st.session_state.file_uploader_key += 1
                     st.rerun()
+
+    return selected_doc
 
 def main():
     """Main application function."""
     st.title("Chat with Your Documents")
-    
+
     # Initialize session state
     init_session_state()
-    
-    # Setup sidebar and get selected document
-    selected_doc = setup_sidebar()
-    
-    # Handle file upload
-    handle_file_upload()
-    
+
+    # Setup document interface and get selected document
+    selected_doc = setup_document_interface()
+
     # Display chat history
     for message in st.session_state.chat_history:
         with st.chat_message(message["role"]):
