@@ -6,7 +6,7 @@ from langchain.schema import Document
 from dotenv import load_dotenv
 import psycopg2
 from datetime import datetime
-from src.database.db import get_db_connection
+from src.database.db import Database
 from src.document_processing.processor import DocumentProcessor
 
 load_dotenv()
@@ -52,47 +52,48 @@ class ConfluenceKnowledgeBase:
 
     def process_and_store_documents(self, documents: List[Document]):
         """Process documents and store them in the database"""
+        db = Database()
+        
         try:
-            conn = get_db_connection()
-            cur = conn.cursor()
-            
-            for doc in documents:
-                # Store the original document
-                cur.execute(
-                    """
-                    INSERT INTO documents (title, content, source, created_at, user_id)
-                    VALUES (%s, %s, %s, %s, %s)
-                    RETURNING id
-                    """,
-                    (
-                        doc.metadata.get('title', 'Untitled'),
-                        doc.page_content,
-                        f"confluence:{self.space_key}",
-                        datetime.now(),
-                        'confluence'
-                    )
-                )
-                doc_id = cur.fetchone()[0]
+            with db.get_connection() as conn:
+                cur = conn.cursor()
                 
-                # Split into chunks and store
-                chunks = self.doc_processor.split_text(doc.page_content)
-                chunk_embeddings = self.doc_processor.generate_embeddings(chunks)
-                
-                for chunk_text, embedding, _ in chunk_embeddings:
+                for doc in documents:
+                    # Store the original document
                     cur.execute(
                         """
-                        INSERT INTO chunks (document_id, content, embedding)
-                        VALUES (%s, %s, %s)
+                        INSERT INTO documents (title, content, source, created_at, user_id)
+                        VALUES (%s, %s, %s, %s, %s)
+                        RETURNING id
                         """,
-                        (doc_id, chunk_text, embedding.tolist())
+                        (
+                            doc.metadata.get('title', 'Untitled'),
+                            doc.page_content,
+                            f"confluence:{self.space_key}",
+                            datetime.now(),
+                            'confluence'
+                        )
                     )
-            
-            conn.commit()
+                    doc_id = cur.fetchone()[0]
+                    
+                    # Split into chunks and store
+                    chunks = self.doc_processor.split_text(doc.page_content)
+                    chunk_embeddings = self.doc_processor.generate_embeddings(chunks)
+                    
+                    for chunk_text, embedding, _ in chunk_embeddings:
+                        cur.execute(
+                            """
+                            INSERT INTO chunks (document_id, content, embedding)
+                            VALUES (%s, %s, %s)
+                            """,
+                            (doc_id, chunk_text, embedding.tolist())
+                        )
+                
+                conn.commit()
             print(f"Successfully processed and stored {len(documents)} documents")
             
         except Exception as e:
             print(f"Error processing and storing documents: {str(e)}")
-            conn.rollback()
         finally:
             cur.close()
             conn.close()
