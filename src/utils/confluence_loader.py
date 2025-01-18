@@ -8,8 +8,11 @@ import psycopg2
 from datetime import datetime
 from src.database.db import Database
 from src.document_processing.processor import DocumentProcessor
+import logging
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 class ConfluenceKnowledgeBase:
     def __init__(self):
@@ -21,6 +24,10 @@ class ConfluenceKnowledgeBase:
         if not all([self.confluence_url, self.confluence_username, 
                    self.confluence_api_token, self.space_key]):
             raise ValueError("Missing required Confluence environment variables")
+            
+        # Ensure URL has a scheme
+        if not self.confluence_url.startswith(('http://', 'https://')):
+            self.confluence_url = 'https://' + self.confluence_url
         
         self.confluence = Confluence(
             url=self.confluence_url,
@@ -51,13 +58,11 @@ class ConfluenceKnowledgeBase:
             return []
 
     def process_and_store_documents(self, documents: List[Document]):
-        """Process documents and store them in the database"""
+        """Process documents and store them in the database."""
         db = Database()
         
         try:
-            with db.get_connection() as conn:
-                cur = conn.cursor()
-                
+            with db.conn.cursor() as cur:
                 for doc in documents:
                     # Store the original document
                     cur.execute(
@@ -89,14 +94,12 @@ class ConfluenceKnowledgeBase:
                             (doc_id, chunk_text, embedding.tolist())
                         )
                 
-                conn.commit()
-            print(f"Successfully processed and stored {len(documents)} documents")
-            
+                db.conn.commit()
+                
         except Exception as e:
-            print(f"Error processing and storing documents: {str(e)}")
-        finally:
-            cur.close()
-            conn.close()
+            logger.error(f"Error storing documents: {str(e)}")
+            db.conn.rollback()
+            raise
 
     def run(self):
         """Main function to load and process Confluence content"""
