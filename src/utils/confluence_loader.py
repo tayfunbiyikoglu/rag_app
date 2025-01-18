@@ -2,13 +2,12 @@ import os
 from typing import List, Dict
 from atlassian import Confluence
 from langchain.document_loaders import ConfluenceLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 from dotenv import load_dotenv
 import psycopg2
 from datetime import datetime
-from ..db.database import get_db_connection
-from ..services.embedding_service import get_embeddings
+from src.database.db import get_db_connection
+from src.document_processing.processor import DocumentProcessor
 
 load_dotenv()
 
@@ -27,7 +26,7 @@ class ConfluenceKnowledgeBase:
             url=self.confluence_url,
             username=self.confluence_username,
             password=self.confluence_api_token,
-            cloud=False  # Set to False for on-premise Confluence
+            cloud=True
         )
         
         self.loader = ConfluenceLoader(
@@ -36,11 +35,7 @@ class ConfluenceKnowledgeBase:
             api_key=self.confluence_api_token
         )
         
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-            length_function=len,
-        )
+        self.doc_processor = DocumentProcessor()
 
     def load_space_content(self) -> List[Document]:
         """Load all content from the specified Confluence space"""
@@ -80,16 +75,16 @@ class ConfluenceKnowledgeBase:
                 doc_id = cur.fetchone()[0]
                 
                 # Split into chunks and store
-                chunks = self.text_splitter.split_text(doc.page_content)
-                embeddings = get_embeddings([chunk for chunk in chunks])
+                chunks = self.doc_processor.split_text(doc.page_content)
+                chunk_embeddings = self.doc_processor.generate_embeddings(chunks)
                 
-                for chunk_text, embedding in zip(chunks, embeddings):
+                for chunk_text, embedding, _ in chunk_embeddings:
                     cur.execute(
                         """
                         INSERT INTO chunks (document_id, content, embedding)
                         VALUES (%s, %s, %s)
                         """,
-                        (doc_id, chunk_text, embedding)
+                        (doc_id, chunk_text, embedding.tolist())
                     )
             
             conn.commit()
